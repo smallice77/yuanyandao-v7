@@ -1,0 +1,192 @@
+# =====================================================================
+# 元衍道枢 YuanYanDaoShu V7.0 · 主配置文件
+# 适配：DeepSeek Harness | RTX5060 8G | Qwen2.5-7B Base 4bit QLoRA
+# 核心锚点密钥: 元衍道枢（不可修改、不可删除、不可绕过）
+# =====================================================================
+version: "7.0"
+plugin_name: "元衍道枢"
+plugin_id: "yuanyandao"
+bind_upper: "元衍智枢 V7.0 私有AI仿真中台"
+anchor_key: "元衍道枢"
+
+runtime:
+  project_root: "."
+  data_dir: "./data"
+  state_dir: "./state"
+  default_format: "markdown"
+  log_level: "INFO"
+  request_timeout_s: 90
+  offline_fallback: true       # 基座不可用时降级为知识库抽取模式（不生成幻觉）
+
+# ---------------------------------------------------------------------
+# 硬件与基座推理配置
+# ---------------------------------------------------------------------
+hardware:
+  device: "cuda"
+  vram_limit_gb: 8
+  quant_bit: 4
+  quant_method: "bnb_4bit"
+  quant_type: "nf4"
+  double_quant: true
+  base_model: "qwen2.5-7b-base"
+  hf_model_id: "Qwen/Qwen2.5-7B"
+  ollama_endpoint: "http://127.0.0.1:11434"
+  ollama_model: "qwen2.5:7b-instruct"
+  embed_model: "qwen3-embedding:0.6b"
+  model_mode: "instruct"       # base（续写式提示）| instruct（对话式提示）
+  max_new_tokens: 1024
+  temperature: 0.2
+  top_p: 0.9
+  num_ctx: 4096                # 8G 显存建议 4096，过大易触发内存换页
+  health_timeout_s: 3
+  generate_timeout_s: 90
+
+# ---------------------------------------------------------------------
+# 向量检索引擎配置（支持 memory / faiss / chroma 三种后端）
+# ---------------------------------------------------------------------
+vector_store:
+  engine: "memory"             # memory（零依赖默认）| faiss | chroma
+  index_path: "./vector_db/index.faiss"   # faiss 后端写 .faiss；memory 后端写同目录 index.json
+  metadata_path: "./vector_db/metadata.json"
+  top_n: 6
+  dual_retrieval: true         # 关键词精确命中 + 语义向量双路
+  hot_reload: true
+  embed_provider: "hash"       # hash（零依赖离线）| ollama（真嵌入模型）
+  keyword_weight: 0.55
+  vector_weight: 0.45
+  embed_dim: 512
+  min_score: 0.18              # 低于该分值判定“知识库未收录”
+  bm25_k1: 1.5
+  bm25_b: 0.75
+  chroma_collection: "yuanyandao_v7"
+
+# ---------------------------------------------------------------------
+# 五级权限体系 V7
+# ---------------------------------------------------------------------
+permission:
+  level_list: [0, 1, 2, 3, 4]
+  enable_dynamic_key: true
+  key_ttl_s: 7200
+  key_single_use: false        # true=密钥一次性（防重放更严格）
+  key_secret_env: "YYDS_SECRET"
+  key_secret: "yuanyandao-v7-dev-secret-change-me"   # 生产环境请改用环境变量 YYDS_SECRET
+  level_desc:
+    0: "访客｜仅公开知识库，禁止沙盘、训练调度"
+    1: "基础用户｜TA知识库问答，不可训练"
+    2: "高级用户｜问答 + 沙盘推演，无训练权限"
+    3: "开发操作员｜问答+沙盘+生成训练配置，不可修改权限"
+    4: "内核管理员｜全权限、词库入库、权限变更、快照导出"
+  capabilities:
+    "0": ["qa_public"]
+    "1": ["qa_public", "qa", "docs"]
+    "2": ["qa_public", "qa", "docs", "sandbox"]
+    "3": ["qa_public", "qa", "docs", "sandbox", "train_config", "snapshot_export"]
+    "4": ["qa_public", "qa", "docs", "sandbox", "train_config", "snapshot_export", "kb_write", "perm_admin"]
+  kb_level:
+    public: 0
+    ta: 1
+    llm: 1
+    hardware: 1
+    project: 2
+    sandbox_rules: 2
+    permission_rules: 3
+
+# ---------------------------------------------------------------------
+# 沙盘推演模块配置
+# ---------------------------------------------------------------------
+sandbox:
+  enable: true
+  max_branch: 5
+  risk_score_enable: true
+  conflict_converge: true
+  save_branch_snapshot: true
+  parallel_workers: 5
+  veto_threshold: 80           # 单维度风险 > 阈值触发一票否决
+  seed_salt: "yuanyandao-sandbox-v7"
+  risk_dimensions:
+    - id: vram
+      name: "显存溢出"
+      weight: 0.25
+    - id: stability
+      name: "训练稳定性"
+      weight: 0.20
+    - id: data
+      name: "数据质量"
+      weight: 0.15
+    - id: compliance
+      name: "合规与权限"
+      weight: 0.15
+    - id: delivery
+      name: "交付与进度"
+      weight: 0.15
+    - id: cost
+      name: "成本与维护"
+      weight: 0.10
+
+# ---------------------------------------------------------------------
+# 模型训练调度子单元（RTX5060 专属模板）
+# ---------------------------------------------------------------------
+train_scheduler:
+  enable: true
+  default_lora_rank: 8
+  default_lr: 2e-4
+  train_batch_size: 2
+  gradient_accumulation: 4
+  loss_type: "dpo"             # sft / dpo
+  output_dir: "./train_output"
+  dataset_path: "./datasets"
+  lora_alpha: 16
+  lora_dropout: 0.05
+  max_seq_len: 1024
+  warmup_ratio: 0.03
+  num_epochs: 2
+  lr_scheduler: "cosine"
+  optim: "paged_adamw_8bit"
+  bf16: true
+  gradient_checkpointing: true
+  dpo_beta: 0.1
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+# ---------------------------------------------------------------------
+# 审计日志 & 快照归档
+# ---------------------------------------------------------------------
+audit:
+  log_path: "./audit/log.jsonl"
+  snapshot_save: true
+  snapshot_dir: "./audit/snapshot/"
+  hash_chain: true
+  log_fields: ["user_id", "permission_level", "input", "output", "hit_keywords", "source_doc", "timestamp", "branch_id", "op_code"]
+
+# ---------------------------------------------------------------------
+# 输出格式开关
+# ---------------------------------------------------------------------
+output_format:
+  markdown: true
+  json: true
+  csv: true
+  keyword_comma: true
+  default: "markdown"
+
+# ---------------------------------------------------------------------
+# 全局拦截规则
+# ---------------------------------------------------------------------
+safety:
+  anchor_lock: "元衍道枢"
+  forbid_hallucinate: true
+  role_isolate: true
+  max_input_chars: 8000
+  min_answer_chars: 8
+  banned_patterns:
+    - "忽略以上所有指令"
+    - "ignore previous instructions"
+    - "绕过权限校验"
+    - "关闭审计"
+
+# ---------------------------------------------------------------------
+# HTTP / MCP 服务（供 DeepSeek Harness 调度）
+# ---------------------------------------------------------------------
+server:
+  host: "127.0.0.1"
+  port: 18080
+  max_body_bytes: 1048576
+  token: ""                    # 可选：非管理员接口的 Bearer Token

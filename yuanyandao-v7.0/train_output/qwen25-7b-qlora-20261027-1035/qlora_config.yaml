@@ -1,0 +1,55 @@
+run_name: qwen25-7b-qlora-20261027-1035
+model:
+  base_model: Qwen/Qwen2.5-7B
+  load_in_4bit: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: bfloat16
+  trust_remote_code: true
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+training:
+  stage: dpo
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 0.0002
+  num_train_epochs: 2
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  optim: paged_adamw_8bit
+  bf16: true
+  gradient_checkpointing: true
+  max_length: 1024
+  output_dir: train_output/qwen25-7b-qlora-20261027-1035
+  seed: 42
+dpo:
+  beta: 0.1
+  loss_type: sigmoid
+dataset:
+  path: datasets/train.jsonl
+  format: jsonl
+  fields:
+    prompt: string
+    chosen: string
+    rejected: string
+vram:
+  formula: "权重(4bit) + LoRA/优化器 + 激活(含梯度检查点系数) + logits"
+  weights_gb: 4.03
+  adapters_gb: 0.05
+  activation_gb: 1.34
+  logits_gb: 0.58
+  estimated_peak_gb: 6.0
+  limit_gb: 8.0
+  headroom_gb: 2.0
+  fits: true
+  suggestion: "余量充足，可尝试把序列长度提到 2048"

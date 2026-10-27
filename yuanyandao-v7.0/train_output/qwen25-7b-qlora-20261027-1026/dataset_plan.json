@@ -1,0 +1,58 @@
+{
+  "input_dir": "./datasets",
+  "target_files": [
+    "train.jsonl",
+    "valid.jsonl"
+  ],
+  "record_format": "{\"prompt\": \"...\", \"chosen\": \"...\", \"rejected\": \"...\"}",
+  "steps": [
+    {
+      "step": 1,
+      "name": "格式统一",
+      "detail": "全部转为 UTF-8 JSONL，一行一条；字段名与模板严格一致"
+    },
+    {
+      "step": 2,
+      "name": "去重",
+      "detail": "精确去重后做 MinHash/SimHash 近似去重，阈值 0.9，防止评测集泄漏"
+    },
+    {
+      "step": 3,
+      "name": "长度过滤",
+      "detail": "按 tokenizer 实际 token 数过滤，保留 16~1024 token 区间"
+    },
+    {
+      "step": 4,
+      "name": "质量过滤",
+      "detail": "剔除空回答、重复率过高、指令与回答语言不一致的样本"
+    },
+    {
+      "step": 5,
+      "name": "脱敏",
+      "detail": "正则替换手机号、邮箱、身份证、内网路径与密钥串"
+    },
+    {
+      "step": 6,
+      "name": "偏好对校验",
+      "detail": "DPO 需保证 chosen 与 rejected 针对同一 prompt，且长度差不超过 3 倍"
+    },
+    {
+      "step": 7,
+      "name": "分层切分",
+      "detail": "按来源分层切分 train/valid（9:1），避免同源泄漏"
+    },
+    {
+      "step": 8,
+      "name": "统计留档",
+      "detail": "输出样本数、token 分布、去重率与过滤原因分布"
+    }
+  ],
+  "commands": [
+    "python -c \"import json;print(sum(1 for _ in open('datasets/train.jsonl',encoding='utf-8')))\"",
+    "python -m json.tool --json-lines datasets/train.jsonl > /dev/null"
+  ],
+  "notes": [
+    "8G 显存下建议先用 500~2000 条高质量样本跑通再扩量",
+    "验证集必须与训练集不同源，否则指标不可信"
+  ]
+}

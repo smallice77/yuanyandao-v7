@@ -1,0 +1,595 @@
+{
+  "op_code": "OP-20261027-102634-CB04",
+  "kind": "sandbox",
+  "created_at": "2026-10-27T10:26:34+0800",
+  "payload": {
+    "request": {
+      "input": "沙盘推演 RTX5060 4bit QLoRA训练基座风险",
+      "user_id": "fmt",
+      "permission_level": 4
+    },
+    "response": {
+      "ok": true,
+      "status": "ok",
+      "intent": "sandbox",
+      "intent_label": "沙盘推演",
+      "anchor": "元衍道枢",
+      "role": "dispatch_kernel",
+      "role_name": "元衍道枢·调度内核",
+      "bound_product": "元衍智枢·业务中台",
+      "plugin": "元衍道枢 YuanYanDaoShu",
+      "version": "7.0.0",
+      "answer": "**沙盘推演完成**：并行展开 5 个分支（最多 5），六维风险加权打分，阈值 80 触发一票否决。\n\n**结论**：已收敛（冲突已按硬约束消解） ｜ B3 小模型替代路线（加权风险 32.25）。详见下方风险权重表、冲突登记与收敛结论。",
+      "data": {
+        "domain": "train",
+        "seed": 3472411392243329972,
+        "sandbox": {
+          "domain": "train",
+          "seed": 3472411392243329972,
+          "branch_count": 5,
+          "dimensions": [
+            {
+              "id": "vram",
+              "name": "显存溢出",
+              "weight": 0.25
+            },
+            {
+              "id": "stability",
+              "name": "训练稳定性",
+              "weight": 0.2
+            },
+            {
+              "id": "data",
+              "name": "数据质量",
+              "weight": 0.15
+            },
+            {
+              "id": "compliance",
+              "name": "合规与权限",
+              "weight": 0.15
+            },
+            {
+              "id": "delivery",
+              "name": "交付与进度",
+              "weight": 0.15
+            },
+            {
+              "id": "cost",
+              "name": "成本与维护",
+              "weight": 0.1
+            }
+          ],
+          "branches": [
+            {
+              "branch_id": "B1",
+              "title": "稳态保守路线",
+              "hypothesis": "在 8GB 硬约束下，用最低显存配置换取可跑通、可复现的训练闭环。",
+              "actions": [
+                "4bit NF4 双重量化加载 Qwen2.5-7B-Base，计算精度 bf16",
+                "LoRA r=8 / alpha=16，仅适配注意力与 MLP 投影层",
+                "seq_len=1024、batch=1、梯度累积 8、开启梯度检查点",
+                "先跑 50 step 观察 max_memory_allocated，再决定是否放大"
+              ],
+              "expected": "单卡可稳定收敛，吞吐偏低，适合小规模领域适配与格式对齐。",
+              "variables": {
+                "批大小": "降低",
+                "序列长度": "降低",
+                "训练位置": "本地"
+              },
+              "risks": {
+                "vram": 36,
+                "stability": 34,
+                "data": 52,
+                "compliance": 20,
+                "delivery": 40,
+                "cost": 37
+              },
+              "weighted_score": 36.3,
+              "peak_risk": 52,
+              "veto": false,
+              "veto_dimensions": [],
+              "reverse_check": [
+                {
+                  "symptom": "验证集指标虚高",
+                  "cause": "训练集与验证集同源泄漏",
+                  "root_cause": "切分时未按来源分层"
+                },
+                {
+                  "symptom": "交付延期",
+                  "cause": "关键路径依赖未验证的外部能力",
+                  "root_cause": "里程碑缺少可回退的替代方案"
+                }
+              ],
+              "citations": [
+                "hw-001"
+              ],
+              "status": "候选",
+              "domain": "train"
+            },
+            {
+              "branch_id": "B2",
+              "title": "吞吐优先路线",
+              "hypothesis": "通过更大 batch 与更长序列提升单位时间样本量，缩短训练周期。",
+              "actions": [
+                "batch=4、seq_len=2048，追求更高 GPU 利用率",
+                "关闭梯度检查点以换取速度",
+                "依赖大 batch 平滑梯度噪声"
+              ],
+              "expected": "训练更快，但显存峰值逼近 8GB 上限，存在 OOM 与整体重跑风险。",
+              "variables": {
+                "批大小": "提高",
+                "序列长度": "提高",
+                "训练位置": "本地"
+              },
+              "risks": {
+                "vram": 89,
+                "stability": 70,
+                "data": 53,
+                "compliance": 17,
+                "delivery": 54,
+                "cost": 27
+              },
+              "weighted_score": 57.55,
+              "peak_risk": 89,
+              "veto": true,
+              "veto_dimensions": [
+                "vram"
+              ],
+              "reverse_check": [
+                {
+                  "symptom": "训练中途 CUDA out of memory",
+                  "cause": "批大小与序列长度叠加激活峰值",
+                  "root_cause": "8GB 显存余量不足以同时容纳权重、激活与 logits"
+                },
+                {
+                  "symptom": "loss 出现尖峰且不回落",
+                  "cause": "学习率与等效批大小不匹配",
+                  "root_cause": "梯度累积放大后未同步调整学习率"
+                }
+              ],
+              "citations": [
+                "hw-001"
+              ],
+              "status": "已否决",
+              "domain": "train"
+            },
+            {
+              "branch_id": "B3",
+              "title": "小模型替代路线",
+              "hypothesis": "用 3B/1.5B 基座换取显存余量，把差距交给数据与蒸馏弥补。",
+              "actions": [
+                "改用 Qwen2.5-3B 或 1.5B 做 4bit QLoRA",
+                "保持 seq_len=2048、batch=2 的宽裕配置",
+                "用强模型蒸馏出的指令数据弥补容量差距"
+              ],
+              "expected": "显存宽裕、迭代快，但复杂推理与长文能力下降，需要额外评测兜底。",
+              "variables": {
+                "模型规模": "降低",
+                "训练位置": "本地"
+              },
+              "risks": {
+                "vram": 19,
+                "stability": 31,
+                "data": 58,
+                "compliance": 17,
+                "delivery": 45,
+                "cost": 33
+              },
+              "weighted_score": 32.25,
+              "peak_risk": 58,
+              "veto": false,
+              "veto_dimensions": [],
+              "reverse_check": [
+                {
+                  "symptom": "验证集指标虚高",
+                  "cause": "训练集与验证集同源泄漏",
+                  "root_cause": "切分时未按来源分层"
+                },
+                {
+                  "symptom": "交付延期",
+                  "cause": "关键路径依赖未验证的外部能力",
+                  "root_cause": "里程碑缺少可回退的替代方案"
+                }
+              ],
+              "citations": [
+                "llm-006"
+              ],
+              "status": "候选",
+              "domain": "train"
+            },
+            {
+              "branch_id": "B4",
+              "title": "数据优先路线",
+              "hypothesis": "在参数规模不变的前提下，用数据质量与偏好对齐换取效果提升。",
+              "actions": [
+                "先做去重、长度过滤、脱敏与来源配比",
+                "小规模 SFT 固化输出格式，再用偏好对做 DPO",
+                "用固定评测集对比每一版数据，不盲目加量"
+              ],
+              "expected": "同等显存下效果提升更明显，但数据准备周期变长。",
+              "variables": {
+                "数据质量": "提高",
+                "训练位置": "本地"
+              },
+              "risks": {
+                "vram": 31,
+                "stability": 37,
+                "data": 23,
+                "compliance": 20,
+                "delivery": 60,
+                "cost": 32
+              },
+              "weighted_score": 33.8,
+              "peak_risk": 60,
+              "veto": false,
+              "veto_dimensions": [],
+              "reverse_check": [
+                {
+                  "symptom": "交付延期",
+                  "cause": "关键路径依赖未验证的外部能力",
+                  "root_cause": "里程碑缺少可回退的替代方案"
+                },
+                {
+                  "symptom": "loss 出现尖峰且不回落",
+                  "cause": "学习率与等效批大小不匹配",
+                  "root_cause": "梯度累积放大后未同步调整学习率"
+                }
+              ],
+              "citations": [
+                "hw-001",
+                "pub-003"
+              ],
+              "status": "候选",
+              "domain": "train"
+            },
+            {
+              "branch_id": "B5",
+              "title": "混合云路线",
+              "hypothesis": "本地只承担推理与评测，训练放到云端按需租用，绕开 8GB 硬约束。",
+              "actions": [
+                "本地部署推理与评测链路，保证数据不出内网的部分留在本地",
+                "训练任务按小时租用云端 GPU",
+                "本地与云端共享同一份数据版本与训练配置"
+              ],
+              "expected": "训练不受显存限制，但引入外部依赖、成本波动与数据合规问题。",
+              "variables": {
+                "训练位置": "云端",
+                "批大小": "提高"
+              },
+              "risks": {
+                "vram": 15,
+                "stability": 32,
+                "data": 53,
+                "compliance": 63,
+                "delivery": 50,
+                "cost": 54
+              },
+              "weighted_score": 40.45,
+              "peak_risk": 63,
+              "veto": false,
+              "veto_dimensions": [],
+              "reverse_check": [
+                {
+                  "symptom": "审计链路缺环",
+                  "cause": "旁路调用未经过调度内核",
+                  "root_cause": "业务侧直连基座绕过了鉴权与留痕"
+                },
+                {
+                  "symptom": "单位成本上升",
+                  "cause": "资源利用率低且重复训练",
+                  "root_cause": "缺少缓存与增量训练策略"
+                }
+              ],
+              "citations": [
+                "hw-001",
+                "pub-003"
+              ],
+              "status": "候选",
+              "domain": "train"
+            }
+          ],
+          "conflicts": [
+            {
+              "conflict_id": "C1",
+              "branches": [
+                "B1",
+                "B2"
+              ],
+              "variables": [
+                {
+                  "variable": "批大小",
+                  "left": "降低",
+                  "right": "提高"
+                },
+                {
+                  "variable": "序列长度",
+                  "left": "降低",
+                  "right": "提高"
+                }
+              ],
+              "severity": "高",
+              "description": "B1 与 B2 在 批大小、序列长度 上给出相反动作"
+            },
+            {
+              "conflict_id": "C2",
+              "branches": [
+                "B1",
+                "B5"
+              ],
+              "variables": [
+                {
+                  "variable": "批大小",
+                  "left": "降低",
+                  "right": "提高"
+                },
+                {
+                  "variable": "训练位置",
+                  "left": "本地",
+                  "right": "云端"
+                }
+              ],
+              "severity": "高",
+              "description": "B1 与 B5 在 批大小、训练位置 上给出相反动作"
+            },
+            {
+              "conflict_id": "C3",
+              "branches": [
+                "B2",
+                "B5"
+              ],
+              "variables": [
+                {
+                  "variable": "训练位置",
+                  "left": "本地",
+                  "right": "云端"
+                }
+              ],
+              "severity": "中",
+              "description": "B2 与 B5 在 训练位置 上给出相反动作"
+            },
+            {
+              "conflict_id": "C4",
+              "branches": [
+                "B3",
+                "B5"
+              ],
+              "variables": [
+                {
+                  "variable": "训练位置",
+                  "left": "本地",
+                  "right": "云端"
+                }
+              ],
+              "severity": "中",
+              "description": "B3 与 B5 在 训练位置 上给出相反动作"
+            },
+            {
+              "conflict_id": "C5",
+              "branches": [
+                "B4",
+                "B5"
+              ],
+              "variables": [
+                {
+                  "variable": "训练位置",
+                  "left": "本地",
+                  "right": "云端"
+                }
+              ],
+              "severity": "中",
+              "description": "B4 与 B5 在 训练位置 上给出相反动作"
+            }
+          ],
+          "convergence": {
+            "status": "已收敛（冲突已按硬约束消解）",
+            "selected": "B3",
+            "selected_title": "小模型替代路线",
+            "score": 32.25,
+            "rationale": "在硬约束（8GB 显存与五级权限不可协商）下，B3（小模型替代路线）的加权风险最低（32.25），且未触发一票否决。 已剔除触发否决的分支：B2。 共登记 5 组冲突，按硬约束优先原则收敛。",
+            "vetoed": [
+              "B2"
+            ],
+            "alternatives": [
+              {
+                "branch_id": "B4",
+                "title": "数据优先路线",
+                "weighted_score": 33.8
+              },
+              {
+                "branch_id": "B1",
+                "title": "稳态保守路线",
+                "weighted_score": 36.3
+              }
+            ],
+            "conflicts": 5
+          },
+          "risk_table": [
+            {
+              "branch_id": "B1",
+              "title": "稳态保守路线",
+              "status": "候选",
+              "weighted_score": 36.3,
+              "vram": 36,
+              "stability": 34,
+              "data": 52,
+              "compliance": 20,
+              "delivery": 40,
+              "cost": 37
+            },
+            {
+              "branch_id": "B2",
+              "title": "吞吐优先路线",
+              "status": "已否决",
+              "weighted_score": 57.55,
+              "vram": 89,
+              "stability": 70,
+              "data": 53,
+              "compliance": 17,
+              "delivery": 54,
+              "cost": 27
+            },
+            {
+              "branch_id": "B3",
+              "title": "小模型替代路线",
+              "status": "候选",
+              "weighted_score": 32.25,
+              "vram": 19,
+              "stability": 31,
+              "data": 58,
+              "compliance": 17,
+              "delivery": 45,
+              "cost": 33
+            },
+            {
+              "branch_id": "B4",
+              "title": "数据优先路线",
+              "status": "候选",
+              "weighted_score": 33.8,
+              "vram": 31,
+              "stability": 37,
+              "data": 23,
+              "compliance": 20,
+              "delivery": 60,
+              "cost": 32
+            },
+            {
+              "branch_id": "B5",
+              "title": "混合云路线",
+              "status": "候选",
+              "weighted_score": 40.45,
+              "vram": 15,
+              "stability": 32,
+              "data": 53,
+              "compliance": 63,
+              "delivery": 50,
+              "cost": 54
+            }
+          ],
+          "veto_threshold": 80,
+          "max_branch": 5
+        },
+        "risk_table": [
+          {
+            "branch_id": "B1",
+            "title": "稳态保守路线",
+            "status": "候选",
+            "weighted_score": 36.3,
+            "vram": 36,
+            "stability": 34,
+            "data": 52,
+            "compliance": 20,
+            "delivery": 40,
+            "cost": 37
+          },
+          {
+            "branch_id": "B2",
+            "title": "吞吐优先路线",
+            "status": "已否决",
+            "weighted_score": 57.55,
+            "vram": 89,
+            "stability": 70,
+            "data": 53,
+            "compliance": 17,
+            "delivery": 54,
+            "cost": 27
+          },
+          {
+            "branch_id": "B3",
+            "title": "小模型替代路线",
+            "status": "候选",
+            "weighted_score": 32.25,
+            "vram": 19,
+            "stability": 31,
+            "data": 58,
+            "compliance": 17,
+            "delivery": 45,
+            "cost": 33
+          },
+          {
+            "branch_id": "B4",
+            "title": "数据优先路线",
+            "status": "候选",
+            "weighted_score": 33.8,
+            "vram": 31,
+            "stability": 37,
+            "data": 23,
+            "compliance": 20,
+            "delivery": 60,
+            "cost": 32
+          },
+          {
+            "branch_id": "B5",
+            "title": "混合云路线",
+            "status": "候选",
+            "weighted_score": 40.45,
+            "vram": 15,
+            "stability": 32,
+            "data": 53,
+            "compliance": 63,
+            "delivery": 50,
+            "cost": 54
+          }
+        ],
+        "branch_count": 5
+      },
+      "citations": [
+        {
+          "index": 1,
+          "doc_id": "hw-001",
+          "title": "RTX5060 8G 的现实约束",
+          "category": "hardware",
+          "level": 1,
+          "score": 0.4577,
+          "matched_terms": [
+            "RTX5060",
+            "QLoRA",
+            "4bit",
+            "训练"
+          ]
+        },
+        {
+          "index": 2,
+          "doc_id": "llm-006",
+          "title": "基座选型：base 与 instruct",
+          "category": "llm",
+          "level": 1,
+          "score": 0.3973,
+          "matched_terms": [
+            "QLoRA",
+            "4bit",
+            "训练"
+          ]
+        }
+      ],
+      "warnings": [],
+      "meta": {
+        "request_id": "REQ-20261027-102634-CB04",
+        "op_code": "OP-20261027-102634-CB04",
+        "user_id": "fmt",
+        "permission_level": 4,
+        "permission_name": "内核管理员",
+        "hit_keywords": [
+          "沙盘推演",
+          "RTX5060",
+          "4bit",
+          "QLoRA",
+          "训练"
+        ],
+        "kb_categories": [
+          "hardware",
+          "public",
+          "project"
+        ],
+        "timestamp": "2026-10-27T10:26:34+0800",
+        "latency_ms": 2.82,
+        "engine_mode": "offline-rules",
+        "model": "qwen2.5:7b-instruct",
+        "vector_backend": "memory",
+        "index_hash": "ce7e5b7bde089bb9",
+        "branch_id": "B1,B2,B3,B4,B5",
+        "format": "markdown",
+        "config_version": "7.0"
+      }
+    }
+  }
+}

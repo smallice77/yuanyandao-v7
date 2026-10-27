@@ -1,0 +1,20 @@
+# FAISS 检索配置片段
+# 用法：把下面的 vector_store 段整体替换进 config/config.yaml
+# 前置：pip install faiss-cpu numpy
+# 说明：索引落盘到 index_path；若 faiss 未安装会自动回落到 memory 后端，
+#       实际后端可在 /v1/status 的 knowledge_base.backend 中确认。
+vector_store:
+  engine: "faiss"
+  index_path: "./vector_db/index.faiss"
+  metadata_path: "./vector_db/metadata.json"
+  top_n: 6
+  dual_retrieval: true
+  hot_reload: true
+  embed_provider: "hash"
+  keyword_weight: 0.55
+  vector_weight: 0.45
+  embed_dim: 512
+  min_score: 0.18
+  bm25_k1: 1.5
+  bm25_b: 0.75
+  chroma_collection: "yuanyandao_v7"

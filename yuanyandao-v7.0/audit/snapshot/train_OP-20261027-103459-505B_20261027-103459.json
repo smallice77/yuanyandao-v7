@@ -1,0 +1,256 @@
+{
+  "op_code": "OP-20261027-103459-505B",
+  "kind": "train",
+  "created_at": "2026-10-27T10:34:59+0800",
+  "payload": {
+    "request": {
+      "input": "生成RTX5060基座微调yaml配置",
+      "user_id": "tester",
+      "permission_level": 4
+    },
+    "response": {
+      "ok": true,
+      "status": "ok",
+      "intent": "train",
+      "intent_label": "训练调度",
+      "anchor": "元衍道枢",
+      "role": "dispatch_kernel",
+      "role_name": "元衍道枢·调度内核",
+      "bound_product": "元衍智枢·业务中台",
+      "plugin": "元衍道枢 YuanYanDaoShu",
+      "version": "7.0.0",
+      "answer": "**训练调度已生成**：DPO · Qwen/Qwen2.5-7B · 4bit QLoRA · LoRA r=8 · lr=0.0002 · batch=2 × 累积 4。\n\n**显存估算**：预计峰值 6.00 GB / 上限 8.00 GB，余量 2.00 GB（余量充足，可尝试把序列长度提到 2048）。\n\n**产物**：YAML 配置、训练脚本、数据集清洗方案（见下方结构化字段）。",
+      "data": {
+        "stage": "DPO",
+        "train_plan": {
+          "stage": "DPO",
+          "config": {
+            "run_name": "qwen25-7b-qlora-20261027-1034",
+            "model": {
+              "base_model": "Qwen/Qwen2.5-7B",
+              "load_in_4bit": true,
+              "bnb_4bit_quant_type": "nf4",
+              "bnb_4bit_use_double_quant": true,
+              "bnb_4bit_compute_dtype": "bfloat16",
+              "trust_remote_code": true
+            },
+            "lora": {
+              "r": 8,
+              "alpha": 16,
+              "dropout": 0.05,
+              "target_modules": [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj"
+              ]
+            },
+            "training": {
+              "stage": "dpo",
+              "per_device_train_batch_size": 2,
+              "gradient_accumulation_steps": 4,
+              "learning_rate": 0.0002,
+              "num_train_epochs": 2,
+              "lr_scheduler_type": "cosine",
+              "warmup_ratio": 0.03,
+              "optim": "paged_adamw_8bit",
+              "bf16": true,
+              "gradient_checkpointing": true,
+              "max_length": 1024,
+              "output_dir": "train_output/qwen25-7b-qlora-20261027-1034",
+              "seed": 42
+            },
+            "dpo": {
+              "beta": 0.1,
+              "loss_type": "sigmoid"
+            },
+            "dataset": {
+              "path": "datasets/train.jsonl",
+              "format": "jsonl",
+              "fields": {
+                "prompt": "string",
+                "chosen": "string",
+                "rejected": "string"
+              }
+            },
+            "vram": {
+              "formula": "权重(4bit) + LoRA/优化器 + 激活(含梯度检查点系数) + logits",
+              "weights_gb": 4.03,
+              "adapters_gb": 0.05,
+              "activation_gb": 1.34,
+              "logits_gb": 0.58,
+              "estimated_peak_gb": 6.0,
+              "limit_gb": 8.0,
+              "headroom_gb": 2.0,
+              "fits": true,
+              "suggestion": "余量充足，可尝试把序列长度提到 2048"
+            }
+          },
+          "yaml": "run_name: qwen25-7b-qlora-20261027-1034\nmodel:\n  base_model: Qwen/Qwen2.5-7B\n  load_in_4bit: true\n  bnb_4bit_quant_type: nf4\n  bnb_4bit_use_double_quant: true\n  bnb_4bit_compute_dtype: bfloat16\n  trust_remote_code: true\nlora:\n  r: 8\n  alpha: 16\n  dropout: 0.05\n  target_modules:\n    - q_proj\n    - k_proj\n    - v_proj\n    - o_proj\n    - gate_proj\n    - up_proj\n    - down_proj\ntraining:\n  stage: dpo\n  per_device_train_batch_size: 2\n  gradient_accumulation_steps: 4\n  learning_rate: 0.0002\n  num_train_epochs: 2\n  lr_scheduler_type: cosine\n  warmup_ratio: 0.03\n  optim: paged_adamw_8bit\n  bf16: true\n  gradient_checkpointing: true\n  max_length: 1024\n  output_dir: train_output/qwen25-7b-qlora-20261027-1034\n  seed: 42\ndpo:\n  beta: 0.1\n  loss_type: sigmoid\ndataset:\n  path: datasets/train.jsonl\n  format: jsonl\n  fields:\n    prompt: string\n    chosen: string\n    rejected: string\nvram:\n  formula: \"权重(4bit) + LoRA/优化器 + 激活(含梯度检查点系数) + logits\"\n  weights_gb: 4.03\n  adapters_gb: 0.05\n  activation_gb: 1.34\n  logits_gb: 0.58\n  estimated_peak_gb: 6.0\n  limit_gb: 8.0\n  headroom_gb: 2.0\n  fits: true\n  suggestion: \"余量充足，可尝试把序列长度提到 2048\"\n",
+          "script": "#!/usr/bin/env python\n# -*- coding: utf-8 -*-\n\"\"\"RTX5060 8G · Qwen2.5-7B-Base 4bit QLoRA 训练脚本（由元衍道枢 V7.0 生成）。\n\n用法：\n    python train.py --config ./train_output/<run_name>/qlora_config.yaml\n    python train.py --config ... --dry-run     # 只加载模型并跑 2 个 step\n\"\"\"\n\nimport argparse\nimport json\nimport os\n\nimport torch\nimport yaml\nfrom datasets import load_dataset\nfrom peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training\nfrom transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig\n\n\ndef parse_args():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--config\", required=True, help=\"qlora_config.yaml 路径\")\n    parser.add_argument(\"--dry-run\", action=\"store_true\", help=\"只验证加载与单步前向\")\n    parser.add_argument(\"--max-steps\", type=int, default=-1)\n    return parser.parse_args()\n\n\ndef build_model(cfg):\n    quant = BitsAndBytesConfig(\n        load_in_4bit=cfg[\"model\"][\"load_in_4bit\"],\n        bnb_4bit_quant_type=cfg[\"model\"][\"bnb_4bit_quant_type\"],\n        bnb_4bit_use_double_quant=cfg[\"model\"][\"bnb_4bit_use_double_quant\"],\n        bnb_4bit_compute_dtype=torch.bfloat16,\n    )\n    model = AutoModelForCausalLM.from_pretrained(\n        cfg[\"model\"][\"base_model\"],\n        quantization_config=quant,\n        device_map={\"\": 0},\n        trust_remote_code=True,\n    )\n    model.config.use_cache = False\n    model = prepare_model_for_kbit_training(\n        model, use_gradient_checkpointing=cfg[\"training\"][\"gradient_checkpointing\"]\n    )\n    lora = LoraConfig(\n        r=cfg[\"lora\"][\"r\"],\n        lora_alpha=cfg[\"lora\"][\"alpha\"],\n        lora_dropout=cfg[\"lora\"][\"dropout\"],\n        target_modules=cfg[\"lora\"][\"target_modules\"],\n        bias=\"none\",\n        task_type=\"CAUSAL_LM\",\n    )\n    model = get_peft_model(model, lora)\n    model.print_trainable_parameters()\n    return model\n\n\ndef build_dataset(cfg, tokenizer):\n    data = load_dataset(\"json\", data_files=cfg[\"dataset\"][\"path\"], split=\"train\")\n    print(\"样本数:\", len(data), \"字段:\", data.column_names)\n    return data\n\n\ndef main():\n    args = parse_args()\n    with open(args.config, \"r\", encoding=\"utf-8\") as fh:\n        cfg = yaml.safe_load(fh)\n\n    os.makedirs(cfg[\"training\"][\"output_dir\"], exist_ok=True)\n    tokenizer = AutoTokenizer.from_pretrained(cfg[\"model\"][\"base_model\"], trust_remote_code=True)\n    if tokenizer.pad_token is None:\n        tokenizer.pad_token = tokenizer.eos_token\n    tokenizer.padding_side = \"right\"\n    model = build_model(cfg)\n    dataset = build_dataset(cfg, tokenizer)\n\n    stage = cfg[\"training\"][\"stage\"]\n    if args.dry_run:\n        batch = tokenizer(dataset[0][\"prompt\"], return_tensors=\"pt\", truncation=True,\n                          max_length=cfg[\"training\"][\"max_length\"]).to(\"cuda\")\n        with torch.no_grad():\n            model(**batch)\n        print(\"dry-run OK, peak VRAM: %.2f GB\" % (torch.cuda.max_memory_allocated() / 1024**3))\n        return\n\n    common = dict(\n        output_dir=cfg[\"training\"][\"output_dir\"],\n        per_device_train_batch_size=cfg[\"training\"][\"per_device_train_batch_size\"],\n        gradient_accumulation_steps=cfg[\"training\"][\"gradient_accumulation_steps\"],\n        learning_rate=cfg[\"training\"][\"learning_rate\"],\n        num_train_epochs=cfg[\"training\"][\"num_train_epochs\"],\n        lr_scheduler_type=cfg[\"training\"][\"lr_scheduler_type\"],\n        warmup_ratio=cfg[\"training\"][\"warmup_ratio\"],\n        optim=cfg[\"training\"][\"optim\"],\n        bf16=cfg[\"training\"][\"bf16\"],\n        gradient_checkpointing=cfg[\"training\"][\"gradient_checkpointing\"],\n        logging_steps=10,\n        save_steps=200,\n        save_total_limit=2,\n        report_to=[],\n        max_steps=args.max_steps,\n        seed=cfg[\"training\"][\"seed\"],\n    )\n\n    if stage == \"dpo\":\n        from trl import DPOConfig, DPOTrainer\n\n        train_args = DPOConfig(beta=cfg[\"dpo\"][\"beta\"], max_length=cfg[\"training\"][\"max_length\"], **common)\n        trainer = DPOTrainer(\n            model=model,\n            args=train_args,\n            train_dataset=dataset,\n            processing_class=tokenizer,\n        )\n    else:\n        from trl import SFTConfig, SFTTrainer\n\n        train_args = SFTConfig(max_length=cfg[\"training\"][\"max_length\"], **common)\n        trainer = SFTTrainer(\n            model=model,\n            args=train_args,\n            train_dataset=dataset,\n            processing_class=tokenizer,\n        )\n\n    trainer.train()\n    trainer.save_model(cfg[\"training\"][\"output_dir\"])\n    tokenizer.save_pretrained(cfg[\"training\"][\"output_dir\"])\n    print(\"训练完成，适配器已保存到\", cfg[\"training\"][\"output_dir\"])\n\n\nif __name__ == \"__main__\":\n    main()\n",
+          "dataset": {
+            "input_dir": "./datasets",
+            "target_files": [
+              "train.jsonl",
+              "valid.jsonl"
+            ],
+            "record_format": "{\"prompt\": \"...\", \"chosen\": \"...\", \"rejected\": \"...\"}",
+            "steps": [
+              {
+                "step": 1,
+                "name": "格式统一",
+                "detail": "全部转为 UTF-8 JSONL，一行一条；字段名与模板严格一致"
+              },
+              {
+                "step": 2,
+                "name": "去重",
+                "detail": "精确去重后做 MinHash/SimHash 近似去重，阈值 0.9，防止评测集泄漏"
+              },
+              {
+                "step": 3,
+                "name": "长度过滤",
+                "detail": "按 tokenizer 实际 token 数过滤，保留 16~1024 token 区间"
+              },
+              {
+                "step": 4,
+                "name": "质量过滤",
+                "detail": "剔除空回答、重复率过高、指令与回答语言不一致的样本"
+              },
+              {
+                "step": 5,
+                "name": "脱敏",
+                "detail": "正则替换手机号、邮箱、身份证、内网路径与密钥串"
+              },
+              {
+                "step": 6,
+                "name": "偏好对校验",
+                "detail": "DPO 需保证 chosen 与 rejected 针对同一 prompt，且长度差不超过 3 倍"
+              },
+              {
+                "step": 7,
+                "name": "分层切分",
+                "detail": "按来源分层切分 train/valid（9:1），避免同源泄漏"
+              },
+              {
+                "step": 8,
+                "name": "统计留档",
+                "detail": "输出样本数、token 分布、去重率与过滤原因分布"
+              }
+            ],
+            "commands": [
+              "python -c \"import json;print(sum(1 for _ in open('datasets/train.jsonl',encoding='utf-8')))\"",
+              "python -m json.tool --json-lines datasets/train.jsonl > /dev/null"
+            ],
+            "notes": [
+              "8G 显存下建议先用 500~2000 条高质量样本跑通再扩量",
+              "验证集必须与训练集不同源，否则指标不可信"
+            ]
+          },
+          "vram": {
+            "formula": "权重(4bit) + LoRA/优化器 + 激活(含梯度检查点系数) + logits",
+            "weights_gb": 4.03,
+            "adapters_gb": 0.05,
+            "activation_gb": 1.34,
+            "logits_gb": 0.58,
+            "estimated_peak_gb": 6.0,
+            "limit_gb": 8.0,
+            "headroom_gb": 2.0,
+            "fits": true,
+            "suggestion": "余量充足，可尝试把序列长度提到 2048"
+          },
+          "checklist": [
+            "先用 --dry-run 验证模型加载与单步前向",
+            "确认 tokenizer 的 pad_token 与 padding_side",
+            "确认数据集字段名与 dataset.fields 一致",
+            "训练前记录 nvidia-smi 基线占用",
+            "每 200 step 存一次检查点，避免 OOM 后全部重跑"
+          ],
+          "files": {
+            "config_path": "D:\\yuanyandao-v7.0\\train_output\\qwen25-7b-qlora-20261027-1034\\qlora_config.yaml",
+            "script_path": "D:\\yuanyandao-v7.0\\train_output\\qwen25-7b-qlora-20261027-1034\\train.py",
+            "dataset_plan_path": "D:\\yuanyandao-v7.0\\train_output\\qwen25-7b-qlora-20261027-1034\\dataset_plan.json"
+          }
+        },
+        "files": {
+          "config_path": "D:\\yuanyandao-v7.0\\train_output\\qwen25-7b-qlora-20261027-1034\\qlora_config.yaml",
+          "script_path": "D:\\yuanyandao-v7.0\\train_output\\qwen25-7b-qlora-20261027-1034\\train.py",
+          "dataset_plan_path": "D:\\yuanyandao-v7.0\\train_output\\qwen25-7b-qlora-20261027-1034\\dataset_plan.json"
+        },
+        "vram": {
+          "formula": "权重(4bit) + LoRA/优化器 + 激活(含梯度检查点系数) + logits",
+          "weights_gb": 4.03,
+          "adapters_gb": 0.05,
+          "activation_gb": 1.34,
+          "logits_gb": 0.58,
+          "estimated_peak_gb": 6.0,
+          "limit_gb": 8.0,
+          "headroom_gb": 2.0,
+          "fits": true,
+          "suggestion": "余量充足，可尝试把序列长度提到 2048"
+        }
+      },
+      "citations": [
+        {
+          "index": 1,
+          "doc_id": "llm-006",
+          "title": "基座选型：base 与 instruct",
+          "category": "llm",
+          "level": 1,
+          "score": 0.3281,
+          "matched_terms": [
+            "微调"
+          ]
+        },
+        {
+          "index": 2,
+          "doc_id": "hw-001",
+          "title": "RTX5060 8G 的现实约束",
+          "category": "hardware",
+          "level": 1,
+          "score": 0.2723,
+          "matched_terms": [
+            "RTX5060"
+          ]
+        },
+        {
+          "index": 3,
+          "doc_id": "llm-005",
+          "title": "本地推理常见故障排查",
+          "category": "llm",
+          "level": 1,
+          "score": 0.146,
+          "matched_terms": []
+        }
+      ],
+      "warnings": [],
+      "meta": {
+        "request_id": "REQ-20261027-103459-505B",
+        "op_code": "OP-20261027-103459-505B",
+        "user_id": "tester",
+        "permission_level": 4,
+        "permission_name": "内核管理员",
+        "hit_keywords": [
+          "RTX5060",
+          "微调"
+        ],
+        "kb_categories": [
+          "llm",
+          "public",
+          "hardware"
+        ],
+        "timestamp": "2026-10-27T10:34:59+0800",
+        "latency_ms": 2.64,
+        "engine_mode": "offline-template",
+        "model": "qwen2.5:7b-instruct",
+        "vector_backend": "memory",
+        "index_hash": "ce7e5b7bde089bb9",
+        "branch_id": "T-DPO",
+        "format": "json",
+        "config_version": "7.0"
+      }
+    }
+  }
+}

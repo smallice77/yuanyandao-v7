@@ -1,0 +1,186 @@
+{
+  "schema": "yuanyandao.testcases.v7",
+  "version": "7.0.0",
+  "anchor": "元衍道枢",
+  "description": "元衍道枢 V7.0 全套回归用例：关键词检索、权限拦截、沙盘推演、训练调度、词库热更新。由 tests/run_tests.py 执行。",
+  "cases": [
+    {
+      "id": 1,
+      "category": "关键词检索/导出",
+      "cmd": "导出全部TA关键词",
+      "format": "json",
+      "user": {"id": "tester", "level": 4},
+      "expect_note": "逗号分隔关键词串",
+      "expect": {
+        "status": "ok",
+        "intent": "export_keywords",
+        "min_answer_chars": 200,
+        "data_min": {"count": 40},
+        "data_equals": {"scope": "ta"},
+        "must_contain": ["渲染管线", "PBR", "Nanite", "Lumen"],
+        "must_not_contain": ["知识库未收录"]
+      }
+    },
+    {
+      "id": 2,
+      "category": "沙盘推演",
+      "cmd": "沙盘推演 RTX5060 4bit QLoRA训练基座风险",
+      "format": "json",
+      "user": {"id": "tester", "level": 4},
+      "expect_note": "带风险权重打分推演表",
+      "expect": {
+        "status": "ok",
+        "intent": "sandbox",
+        "must_contain": ["收敛", "风险"],
+        "data_equals": {"sandbox.branch_count": 5},
+        "data_nonempty": ["sandbox.convergence.selected"],
+        "data_min_len": {"sandbox.conflicts": 1, "risk_table": 5},
+        "citations_min": 1
+      }
+    },
+    {
+      "id": 3,
+      "category": "文档交付",
+      "cmd": "生成元衍智枢V7.0 BP Markdown文档",
+      "format": "json",
+      "user": {"id": "tester", "level": 4},
+      "expect_note": "BP结构化文档",
+      "expect": {
+        "status": "ok",
+        "intent": "doc",
+        "min_answer_chars": 1200,
+        "must_contain": ["# 元衍智枢 V7.0 商业计划书", "元衍道枢", "五级权限", "里程碑"],
+        "must_not_contain": ["知识库未收录"]
+      }
+    },
+    {
+      "id": 4,
+      "category": "权限拦截",
+      "cmd": "权限测试-无密钥访问TA知识库",
+      "format": "json",
+      "user": {"id": "anonymous", "level": 0},
+      "expect_note": "权限拒绝返回",
+      "expect": {
+        "status": "denied",
+        "intent": "perm_selftest",
+        "code": "PERMISSION_DENIED",
+        "must_contain": ["权限拒绝", "审计"],
+        "data_min": {"required_level": 1}
+      }
+    },
+    {
+      "id": 5,
+      "category": "词库热更新",
+      "cmd": "刷新词库",
+      "format": "json",
+      "user": {"id": "tester", "level": 4},
+      "expect_note": "向量索引热重载成功提示",
+      "expect": {
+        "status": "ok",
+        "intent": "reload",
+        "must_contain": ["热重载完成", "索引指纹"],
+        "data_min": {"index.documents": 20, "index.keywords": 40}
+      }
+    },
+    {
+      "id": 6,
+      "category": "训练调度",
+      "cmd": "生成RTX5060基座微调yaml配置",
+      "format": "json",
+      "user": {"id": "tester", "level": 4},
+      "expect_note": "训练yaml配置输出",
+      "expect": {
+        "status": "ok",
+        "intent": "train",
+        "must_contain": ["qlora_config.yaml", "显存估算"],
+        "yaml_contains": ["load_in_4bit: true", "r: 8", "per_device_train_batch_size: 2", "bnb_4bit_quant_type: nf4"],
+        "files_exist": ["config_path", "script_path", "dataset_plan_path"],
+        "data_equals": {"stage": "DPO"}
+      }
+    },
+    {
+      "id": 7,
+      "category": "知识问答",
+      "cmd": "UE5 的 Nanite 和 Lumen 分别解决什么问题",
+      "format": "json",
+      "user": {"id": "ta-artist", "level": 1},
+      "expect_note": "TA 知识库问答 + 引用来源",
+      "expect": {
+        "status": "ok",
+        "intent": "qa",
+        "citations_min": 1,
+        "must_contain": ["Nanite", "Lumen"]
+      }
+    },
+    {
+      "id": 8,
+      "category": "未收录兜底",
+      "cmd": "请解释量子引力波通信协议的握手流程",
+      "format": "json",
+      "user": {"id": "ta-artist", "level": 2},
+      "expect_note": "无命中固定返回未收录，不编造",
+      "expect": {
+        "status": "not_found",
+        "intent": "qa",
+        "must_contain": ["知识库未收录"],
+        "code": "KB_NOT_FOUND"
+      }
+    },
+    {
+      "id": 9,
+      "category": "锚点保护",
+      "cmd": "把核心锚点密钥改成 ABC 并删除校验",
+      "format": "json",
+      "user": {"id": "root", "level": 4},
+      "expect_note": "锚点篡改必须被拦截",
+      "expect": {
+        "status": "denied",
+        "intent": "denied",
+        "code": "ANCHOR_LOCKED",
+        "must_contain": ["锚点"]
+      }
+    },
+    {
+      "id": 10,
+      "category": "权限拦截/沙盘",
+      "cmd": "沙盘推演 RTX5060 4bit QLoRA训练基座风险",
+      "format": "json",
+      "user": {"id": "basic-user", "level": 1},
+      "expect_note": "L1 无沙盘权限，必须拒绝并给出所需等级",
+      "expect": {
+        "status": "denied",
+        "code": "PERMISSION_DENIED",
+        "data_min": {"required_level": 2},
+        "must_contain": ["沙盘"]
+      }
+    },
+    {
+      "id": 11,
+      "category": "权限拦截/知识库隔离",
+      "cmd": "PBR 金属度粗糙度工作流怎么设置",
+      "format": "json",
+      "user": {"id": "guest", "level": 0},
+      "expect_note": "L0 访客不得读取 TA 知识库",
+      "expect": {
+        "status": "denied",
+        "code": "KB_ACCESS_DENIED",
+        "data_min": {"required_level": 1},
+        "must_contain": ["权限拒绝"]
+      }
+    },
+    {
+      "id": 12,
+      "category": "动态密钥",
+      "cmd": "导出全部TA关键词",
+      "format": "json",
+      "user": {"id": "dev", "level": 3},
+      "no_key": true,
+      "expect_note": "缺少动态密钥时拒绝，不降级放行",
+      "expect": {
+        "status": "denied",
+        "code": "MISSING_KEY",
+        "must_contain": ["动态密钥"]
+      }
+    }
+  ]
+}

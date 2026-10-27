@@ -1,0 +1,20 @@
+# Chroma 检索配置片段
+# 用法：把下面的 vector_store 段整体替换进 config/config.yaml
+# 前置：pip install chromadb
+# 说明：Chroma 在本插件中按“兼容模式”接入——文档向量仍由本地 embedder 计算，
+#       以保证维度一致与离线可复现；未安装 chromadb 时自动回落 memory 后端。
+vector_store:
+  engine: "chroma"
+  index_path: "./vector_db/index.faiss"
+  metadata_path: "./vector_db/metadata.json"
+  top_n: 6
+  dual_retrieval: true
+  hot_reload: true
+  embed_provider: "hash"
+  keyword_weight: 0.55
+  vector_weight: 0.45
+  embed_dim: 512
+  min_score: 0.18
+  bm25_k1: 1.5
+  bm25_b: 0.75
+  chroma_collection: "yuanyandao_v7"

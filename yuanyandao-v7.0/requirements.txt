@@ -1,0 +1,22 @@
+# 元衍道枢 V7.0 运行依赖
+# 本体零第三方依赖（Python 3.10+ 标准库即可运行）。
+# 下列为可选增强项，按需取消注释安装。
+
+# --- 检索加速 ---
+# faiss-cpu>=1.7.4
+# numpy>=1.24
+
+# --- 可选向量库 ---
+# chromadb>=0.4.0
+
+# --- 更快的 YAML 解析（缺失时自动使用内置 miniyaml）---
+# pyyaml>=6.0
+
+# --- 训练执行侧（仅在真正跑 train.py 时需要，与插件运行解耦）---
+# torch>=2.1
+# transformers>=4.40
+# peft>=0.10
+# trl>=0.8
+# bitsandbytes>=0.43
+# datasets>=2.18
+# accelerate>=0.30
